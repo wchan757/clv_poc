@@ -1,155 +1,109 @@
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+import argparse
+import os
 
-class ResistanceScoreCalculator:
+class PercentileTUSClustering:
     """
-    A class to calculate the Resistance Score (RS_total) and Transaction Utility Score (TUS).
-    
-    Steps:
-      1. Compute an 'internal_raw' resistance score based on personality traits.
-      2. Standardize 'internal_raw' into 'internal_z'.
-      3. Standardize external factors: 
-         - TENURE_COUNT_MOS (tenure_z)
-         - PAYMENT_CATEGORY_CODE (payment_raw -> payment_z)
-      4. Compute the total resistance score RS_total (ensuring it's always > 0).
-      5. Compute TUS = CLV_OVERALL_REVENUE / RS_total (allows negatives for CLV).
-      
-    Required Columns:
-      - O_pred, C_pred, E_pred, A_pred, N_pred   [each in range 1..5]
-      - TENURE_COUNT_MOS                         [numeric, can be float]
-      - PAYMENT_CATEGORY_CODE                    [assumed numeric: e.g., 1=prepaid, 2=postpaid]
-      - CLV_OVERALL_REVENUE                      [numeric, can be positive or negative]
-    
-    Outputs:
-      - internal_raw, internal_z
-      - tenure_z, payment_raw, payment_z
-      - RS_z, RS_total
-      - TUS
+    A class to segment users based on TUS using percentile-based binning 
+    for a balanced distribution, while adding a descriptive group name.
     """
 
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, tus_col: str = "TUS"):
         """
-        Initializes the calculator with a copy of the DataFrame to avoid modifying the original.
-        
-        Args:
-            df (pd.DataFrame): Input DataFrame with required columns.
-        """
-        self.df = df.copy()
-        self.scaler_int = StandardScaler()
-        self.scaler_tenure = StandardScaler()
-        self.scaler_pay = StandardScaler()
+        Initializes the clustering model.
 
-    def compute_internal_score(self):
+        Parameters:
+        - tus_col: Column name for TUS. Defaults to 'TUS'.
         """
-        Computes the internal resistance score based on personality traits.
-        
-        Logic:
-          - Higher Openness (O) & Agreeableness (A) => Lower friction (negative effect).
-          - Higher Conscientiousness (C), Extraversion (E), and Neuroticism (N) => Higher friction.
-        """
-        self.df['internal_raw'] = (
-              (6 - self.df['O_pred'])   # Higher O => lower friction
-            + (6 - self.df['A_pred'])   # Higher A => lower friction
-            + self.df['C_pred']         # Higher C => higher friction
-            + self.df['E_pred']         # Higher E => higher friction
-            + self.df['N_pred']         # Higher N => higher friction
-        )
+        self.tus_col = tus_col
 
-        # Standardize the internal resistance score
-        self.df['internal_z'] = self.scaler_int.fit_transform(self.df[['internal_raw']])
+    def fit_cluster(self, df):
+        """
+        Segments users into percentiles based on TUS and adds a descriptive group name.
 
-    def compute_tenure_score(self):
-        """
-        Standardizes the tenure column (TENURE_COUNT_MOS).
-        
-        - Converts to numeric (handling errors).
-        - Drops missing values to ensure clean data.
-        - Standardizes using sklearn's StandardScaler.
-        """
-        self.df['TENURE_COUNT_MOS'] = pd.to_numeric(self.df['TENURE_COUNT_MOS'], errors='coerce')
-        self.df.dropna(subset=['TENURE_COUNT_MOS'], inplace=True)
-        self.df['tenure_z'] = self.scaler_tenure.fit_transform(self.df[['TENURE_COUNT_MOS']])
+        Parameters:
+        - df: DataFrame with the TUS column.
 
-    def compute_payment_score(self):
-        """
-        Maps and standardizes the PAYMENT_CATEGORY_CODE:
-        
-        - If 2 (Postpaid) => less friction => numeric = 1.0
-        - Otherwise (Prepaid/Other) => more friction => numeric = 3.0
-        """
-        self.df['payment_raw'] = self.df['PAYMENT_CATEGORY_CODE'].apply(lambda x: 1.0 if x == 2 else 3.0)
-        self.df['payment_z'] = self.scaler_pay.fit_transform(self.df[['payment_raw']])
-
-    def compute_resistance_score(self):
-        """
-        Computes the total resistance score (RS_total).
-        
-        Formula:
-          RS_z = internal_z + payment_z - tenure_z
-        
-        Ensures RS_total is always positive by shifting values if necessary.
-        """
-        self.df['RS_z'] = self.df['internal_z'] + self.df['payment_z'] - self.df['tenure_z']
-
-        # Ensure RS_z is always positive (to avoid division by zero or negative values)
-        min_val = self.df['RS_z'].min()
-        shift_amount = abs(min_val) + 0.001 if min_val <= 0 else 0
-        self.df['RS_total'] = self.df['RS_z'] + shift_amount
-
-    def compute_tus(self):
-        """
-        Computes the Transaction Utility Score (TUS):
-        
-        Formula:
-          TUS = CLV_OVERALL_REVENUE / RS_total
-        
-        - Drops missing CLV values.
-        - Handles cases where RS_total = 0 to avoid division errors.
-        """
-        self.df.dropna(subset=['CLV_OVERALL_REVENUE'], inplace=True)
-        self.df['TUS'] = self.df.apply(
-            lambda row: row['CLV_OVERALL_REVENUE'] / row['RS_total'] if row['RS_total'] != 0 else None,
-            axis=1
-        )
-
-    def process(self):
-        """
-        Runs all computations in sequence.
-        
         Returns:
-            pd.DataFrame: DataFrame with additional computed columns.
+        - df: DataFrame with new 'TUS_Cluster' and 'TUS_Group_Name' columns.
         """
-        self.compute_internal_score()
-        self.compute_tenure_score()
-        self.compute_payment_score()
-        self.compute_resistance_score()
-        self.compute_tus()
-        return self.df
+        if self.tus_col not in df.columns:
+            raise ValueError(f"Error: Column '{self.tus_col}' not found in the dataset.")
+
+        df = df.dropna(subset=[self.tus_col]).copy()
+
+        # Compute TUS percentiles
+        df['TUS_percentile'] = df[self.tus_col].rank(pct=True)
+
+        # Define percentile-based binning
+        def assign_priority(pct):
+            if pct <= 0.25:
+                return 'LOW_PRIORITY'
+            elif pct <= 0.60:
+                return 'MEDIUM_PRIORITY'
+            elif pct <= 0.85:
+                return 'HIGH_PRIORITY'
+            else:
+                return 'VERY_HIGH_PRIORITY'
+
+        df['TUS_Cluster'] = df['TUS_percentile'].apply(assign_priority)
+
+        # Map to human-readable group names
+        group_names = {
+            "LOW_PRIORITY": "Low Potential - High Resistance",
+            "MEDIUM_PRIORITY": "Moderate Potential - Some Resistance",
+            "HIGH_PRIORITY": "High Potential - Low Resistance",
+            "VERY_HIGH_PRIORITY": "Top Potential - Very Low Resistance"
+        }
+
+        df['TUS_Group_Name'] = df['TUS_Cluster'].map(group_names)
+
+        return df
+
+    def save_results(self, df, output_path):
+        """
+        Save the processed DataFrame to a CSV file.
+
+        Parameters:
+        - df: Processed DataFrame with TUS Clusters and Group Names.
+        - output_path: File path to save the results.
+        """
+        df.to_csv(output_path, index=False)
+        print(f"Clustered data saved to {output_path}")
 
 
 if __name__ == "__main__":
-    import os
+    parser = argparse.ArgumentParser(description="Segment users into TUS clusters based on percentile binning.")
 
-    # File path to data
-    data_path = r'C:\Users\13032\Desktop\ph_behavior\big_5_personality\10k_predictions.csv'
-    
-    if os.path.exists(data_path):
-        df_raw = pd.read_csv(data_path)
+    parser.add_argument("-i", "--input", type=str, required=True, help="Path to the input CSV file.")
+    parser.add_argument("-o", "--output", type=str, required=True, help="Path to save the processed output CSV file.")
+    parser.add_argument("-t", "--tus_col", type=str, default="TUS", 
+                        help="Column name for TUS. Defaults to 'TUS'.")
+    parser.add_argument("--show", action="store_true", help="Display a sample of results.")
 
-        # Initialize and process calculations
-        calculator = ResistanceScoreCalculator(df_raw)
-        df_result = calculator.process()
+    args = parser.parse_args()
 
-        # Display computed values
-        print(df_result[[
-            'CLV_OVERALL_REVENUE',
-            'internal_raw', 'internal_z',
-            'tenure_z', 'payment_raw', 'payment_z',
-            'RS_total', 'TUS'
-        ]].head())
-
-        # Save results
-        out_path = r'C:\Users\13032\Desktop\ph_behavior\big_5_personality\10k_predictions_with_tus_negative_possible.csv'
-        df_result.to_csv(out_path, index=False)
+    # Check if input file exists
+    if not os.path.exists(args.input):
+        print(f"Error: Input file not found at {args.input}")
     else:
-        print(f"File not found: {data_path}")
+        df_raw = pd.read_csv(args.input)
+
+        # Initialize clustering with optional TUS column
+        tus_clustering = PercentileTUSClustering(args.tus_col)
+
+        # Perform Clustering
+        try:
+            df_clustered = tus_clustering.fit_cluster(df_raw)
+
+            # Save results
+            tus_clustering.save_results(df_clustered, args.output)
+
+            # Optionally display sample output
+            if args.show:
+                print(df_clustered[[args.tus_col, 'TUS_percentile', 'TUS_Cluster', 'TUS_Group_Name']].head(20))
+                print("\nCluster distribution (%):")
+                print(df_clustered['TUS_Cluster'].value_counts(normalize=True) * 100)
+
+        except ValueError as e:
+            print(e)
