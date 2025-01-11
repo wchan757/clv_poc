@@ -1,9 +1,11 @@
 import os
 import pandas as pd
 import re
+import argparse
+
 
 class TextDataProcessor:
-    def __init__(self, folder_path="participant_response", file_prefix="cinoketext_", output_csv="combined_data.csv", join_file=None, join_key="SUBSCRIBER_ID"):
+    def __init__(self, folder_path, file_prefix, output_csv, join_file=None, join_key="SUBSCRIBER_ID"):
         """
         Initialize the TextDataProcessor class.
 
@@ -21,7 +23,7 @@ class TextDataProcessor:
         self.data = []
 
     def process_files(self):
-        """Reads and processes all text files matching 'cinoketext_*.txt' in the specified folder."""
+        """Reads and processes all text files matching the specified prefix in the folder."""
         print(f"Processing text files in folder: {self.folder_path}")
 
         # Check if the folder exists
@@ -30,9 +32,8 @@ class TextDataProcessor:
 
         # List all files in the folder
         for file_name in os.listdir(self.folder_path):
-            if file_name.startswith(self.file_prefix) and file_name.endswith(".txt"):  # Match files like 'cinoketext_1.txt'
+            if file_name.startswith(self.file_prefix) and file_name.endswith(".txt"):
                 file_path = os.path.join(self.folder_path, file_name)
-
                 print(f"Processing file: {file_name}")
 
                 # Read and process the file
@@ -81,13 +82,23 @@ class TextDataProcessor:
         self.save_to_csv()
 
 
-# Example usage
 if __name__ == "__main__":
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Process and combine text data files.")
+    parser.add_argument("--folder_path", required=True, help="Path to the folder containing text files.")
+    parser.add_argument("--file_prefix", required=True, help="Prefix of the files to process.")
+    parser.add_argument("--output_csv", required=True, help="Name of the output CSV file.")
+    parser.add_argument("--join_file", help="Path to the CSV or Excel file to join with.")
+    parser.add_argument("--join_key", default="SUBSCRIBER_ID", help="The key column to perform an inner join (default: SUBSCRIBER_ID).")
+
+    args = parser.parse_args()
+
+    # Initialize and run the processor
     processor = TextDataProcessor(
-        folder_path="participant_response", 
-        file_prefix="cinoketext_", 
-        output_csv="combined_data.csv", 
-        join_file="join_data.csv",  # Specify the file to join
-        join_key="SUBSCRIBER_ID"
+        folder_path=args.folder_path,
+        file_prefix=args.file_prefix,
+        output_csv=args.output_csv,
+        join_file=args.join_file,
+        join_key=args.join_key
     )
     processor.run()
