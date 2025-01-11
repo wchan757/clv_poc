@@ -1,6 +1,8 @@
 import os
+import argparse
 import pandas as pd
 from poe_api_wrapper import PoeApi
+
 
 class PersonalityAnalysis:
     def __init__(self, input_file: str, output_folder: str, api_tokens: dict, bot_name: str = "gpt4_o_128k", batch_size: int = 200):
@@ -92,15 +94,48 @@ class PersonalityAnalysis:
         except Exception as e:
             print(f"Error saving response for batch {batch_num + 1}: {e}")
 
+
 if __name__ == "__main__":
-    # Example usage
+    parser = argparse.ArgumentParser(description="Run the Personality Analysis script.")
+    parser.add_argument(
+        "--input_file",
+        type=str,
+        required=True,
+        help="Path to the input Excel file (e.g., raw data)."
+    )
+    parser.add_argument(
+        "--output_folder",
+        type=str,
+        required=True,
+        help="Directory where output files will be saved."
+    )
+    parser.add_argument(
+        "--bot_name",
+        type=str,
+        default="gpt4_o_128k",
+        help="The name of the bot to be used. Default is 'gpt4_o_128k'."
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=200,
+        help="Number of rows per batch for processing. Default is 200."
+    )
+
+    args = parser.parse_args()
+
+    # Fetch API tokens from environment variables
     tokens = {
         'p-b': os.getenv('POE_API_TOKEN_BASIC', 'your_default_token'),
         'p-lat': os.getenv('POE_API_TOKEN_LAT', 'your_default_token')
     }
-    
-    input_path = r'C:\Users\13032\Desktop\ph_behavior\big_5_personality\10k_sampling_noMSISDN.xlsx'
-    output_path = r'C:\Users\13032\Desktop\ph_behavior\participant_response'
-    
-    analyzer = PersonalityAnalysis(input_file=input_path, output_folder=output_path, api_tokens=tokens)
+
+    # Initialize and run the PersonalityAnalysis class
+    analyzer = PersonalityAnalysis(
+        input_file=args.input_file,
+        output_folder=args.output_folder,
+        api_tokens=tokens,
+        bot_name=args.bot_name,
+        batch_size=args.batch_size
+    )
     analyzer.process_batches()
