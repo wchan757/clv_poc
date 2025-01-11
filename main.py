@@ -6,6 +6,7 @@ from group_assignment import GroupAssignment
 from group_segmentation import GroupSegmentation
 from resistance_score_calculation import ResistanceScoreCalculator
 from result_parsing import ResultParser
+from customer_segmentation import CustomerSegmentation  # Import the CustomerSegmentation class
 
 def main(
     input_excel,
@@ -16,7 +17,8 @@ def main(
     group_assignment_file="group_assignments.csv",
     group_segmentation_file="group_segments.csv",
     resistance_scores_file="resistance_scores.csv",
-    final_results_file="final_results.csv"
+    final_results_file="final_results.csv",
+    customer_segmentation_output="customer_segmentation_results.csv"
 ):
     """
     Main function for executing the pipeline with dynamic parameters.
@@ -31,6 +33,7 @@ def main(
     - group_segmentation_file: Name of the file to save group segments.
     - resistance_scores_file: Name of the file to save resistance scores.
     - final_results_file: Name of the file to save the final parsed results.
+    - customer_segmentation_output: Name of the file to save customer segmentation results.
     """
 
     # Ensure the output folder exists
@@ -85,8 +88,14 @@ def main(
     )
     parser.run()
 
-    print(f"Pipeline completed. Final results saved to {os.path.join(output_folder, final_results_file)}.")
+    # **Step 7: Customer Segmentation (New Step)**
+    print("Step 7: Performing Customer Segmentation...")
+    segmentation = CustomerSegmentation(
+        file_path=os.path.join(output_folder, final_results_file)
+    )
+    segmentation.process(os.path.join(output_folder, customer_segmentation_output))
 
+    print(f"Pipeline completed. Final segmentation results saved to {os.path.join(output_folder, customer_segmentation_output)}.")
 
 if __name__ == "__main__":
     # Use argparse for command-line arguments
@@ -100,6 +109,7 @@ if __name__ == "__main__":
     parser.add_argument("--group_segmentation_file", type=str, default="group_segments.csv", help="Name of the file to save group segments.")
     parser.add_argument("--resistance_scores_file", type=str, default="resistance_scores.csv", help="Name of the file to save resistance scores.")
     parser.add_argument("--final_results_file", type=str, default="final_results.csv", help="Name of the file to save the final parsed results.")
+    parser.add_argument("--customer_segmentation_output", type=str, default="customer_segmentation_results.csv", help="Name of the file to save customer segmentation results.")
 
     args = parser.parse_args()
 
@@ -113,5 +123,6 @@ if __name__ == "__main__":
         group_assignment_file=args.group_assignment_file,
         group_segmentation_file=args.group_segmentation_file,
         resistance_scores_file=args.resistance_scores_file,
-        final_results_file=args.final_results_file
+        final_results_file=args.final_results_file,
+        customer_segmentation_output=args.customer_segmentation_output
     )
